@@ -2,11 +2,13 @@
 import os
 import sys
 
+from keras.callbacks import ModelCheckpoint
 from keras.layers import Input
 from keras.layers import LSTM
 from keras.layers import Dense
 from keras.models import Model
 from keras.models import load_model
+from keras.models import model_from_json
 from keras.utils import plot_model
 
 import pandas as pd
@@ -98,44 +100,70 @@ plot_model(to_file='model.png',model=model_train,show_shapes=True)
 plot_model(to_file='encoder.png',model=encoder_infer,show_shapes=True)
 plot_model(to_file='decoder.png',model=decoder_infer,show_shapes=True)
 
+
 model_train.compile(optimizer='rmsprop', loss='categorical_crossentropy')
 
 model_train.summary()
-
 encoder_infer.summary()
-
 decoder_infer.summary()
 
-model_train.fit([encoder_input,decoder_input],decoder_output,batch_size=BATCH_SIZE, epochs=EPOCH, validation_split=0.2)
+model_file_json = 'model.json'
+encoder_model_file_json = 'encoder_model.json'
+decoder_model_file_json = 'decoder_model.json'
+model_file = 'model.h5'
+encoder_model_file = 'encoder_model.h5'
+decoder_model_file = 'decoder_model.h5'
 
+def SaveModel(model, filename):
+    model_json = model.to_json()
+    with open(filename, "w") as json_file:
+        json_file.write(model_json)
 
-def predict_chinese(source,encoder_inference, decoder_inference, n_steps, features):
-    #?????encoder????????????
+def LoadModel(filename):
+    json_file = open(filename, 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    model = model_from_json(loaded_model_json)
+    return model
+
+if sys.argv[1] == 'Train':
+    model_train.fit([encoder_input, decoder_input], decoder_output, batch_size=BATCH_SIZE, epochs=EPOCH, validation_split=0.2)
+    SaveModel(model_train, model_file_json)
+    SaveModel(encoder_infer, encoder_model_file_json)
+    SaveModel(decoder_infer, decoder_model_file_json)
+    model_train.save(model_file)
+    encoder_infer.save(encoder_model_file)
+    decoder_infer.save(decoder_model_file)
+
+elif sys.argv[1] == 'Test':
+    # load json and create model
+    model_train = LoadModel(model_file_json)
+    encoder_infer = LoadModel(encoder_model_file_json)
+    decoder_infer = LoadModel(decoder_model_file_json)
+    model_train = load_model(model_file)
+    encoder_infer = load_model(encoder_model_file)
+    decoder_infer = load_model(decoder_model_file)
+
+def predict_chinese(source, encoder_inference, decoder_inference, n_steps, features):
     state = encoder_inference.predict(source)
-    #?????'\t',?????
     predict_seq = np.zeros((1,1,features))
     predict_seq[0,0,target_dict['\t']] = 1
 
     output = ''
-    #???encoder??????????
-    #???????????????????????????????????
-    for i in range(n_steps):#n_steps???????
-        #?decoder????????h,c??????????????predict_seq
+    for i in range(n_steps):
         yhat,h,c = decoder_inference.predict([predict_seq]+state)
-        #??????yhat?Dense???????????h??
         char_index = np.argmax(yhat[0,-1,:])
         char = target_dict_reverse[char_index]
         output += char
-        state = [h,c]#??????????????????
+        state = [h,c]
         predict_seq = np.zeros((1,1,features))
         predict_seq[0,0,char_index] = 1
-        if char == '\n':#???????????
+        if char == '\n':
             break
     return output
 
-for i in range(1000,1100):
-    test = encoder_input[i:i+1,:,:]#i:i+1???????
-    out = predict_chinese(test,encoder_infer,decoder_infer,OUTPUT_LENGTH,OUTPUT_FEATURE_LENGTH)
-    #print(input_texts[i],'\n---\n',target_texts[i],'\n---\n',out)
+for i in range(0,10):
+    test = encoder_input[i:i+1,:,:]
+    out = predict_chinese(test, encoder_infer, decoder_infer, OUTPUT_LENGTH,OUTPUT_FEATURE_LENGTH)
     print(input_texts[i])
     print(out)
